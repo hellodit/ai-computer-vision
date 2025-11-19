@@ -6,3 +6,11 @@ export interface AnalysisCategory {
   status?: AnalysisStatus
 }
 
+export interface AnalysisItemResult {
+  analysisType: string
+  text: string
+  timestamp: Date
+  error?: string
+  isProcessing?: boolean
+}
+

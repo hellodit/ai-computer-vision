@@ -45,36 +45,38 @@ const isSelected = (label: string): boolean => selectedItems.value.includes(labe
 </script>
 
 <template>
-  <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-    <UCard
+  <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
+    <button
       v-for="(label, index) in props.items"
       :key="`${label}-${index}`"
+      type="button"
       :class="[
-        'cursor-pointer rounded-2xl border transition w-full',
+        'cursor-pointer rounded-lg border px-3 py-2 transition-all text-left flex items-center gap-2 min-w-0',
         isSelected(label)
-          ? 'border-primary-500 bg-primary-50 dark:border-primary-400/70 dark:bg-primary-500/10'
-          : 'border-gray-200 bg-white hover:border-primary-200 dark:border-gray-800 dark:bg-gray-900'
+          ? 'border-primary-500 bg-primary-50 dark:border-primary-400/70 dark:bg-primary-500/10 shadow-sm'
+          : 'border-gray-200 bg-white hover:border-primary-300 hover:bg-primary-50/50 dark:border-gray-700 dark:bg-gray-800 dark:hover:border-primary-600 dark:hover:bg-primary-500/5'
       ]"
       @click="handleSelectionChange(label, !isSelected(label))"
+      :aria-checked="isSelected(label)"
+      role="checkbox"
     >
-      <label
-        class="flex items-start gap-3 text-left"
-        :aria-checked="isSelected(label)"
-        role="checkbox"
+      <UCheckbox
+        :model-value="isSelected(label)"
+        @update:model-value="handleSelectionChange(label, $event)"
+        size="sm"
+        aria-label="Pilih analisis"
+        @click.stop
+      />
+      <span
+        :class="[
+          'text-xs font-medium capitalize truncate flex-1',
+          isSelected(label)
+            ? 'text-primary-900 dark:text-primary-100'
+            : 'text-gray-700 dark:text-gray-300'
+        ]"
       >
-        <UCheckbox
-          :model-value="isSelected(label)"
-          @update:model-value="handleSelectionChange(label, $event)"
-          class="mt-0.5"
-          aria-label="Pilih analisis"
-          @click.stop
-        />
-        <div>
-          <p class="text-base font-semibold capitalize text-gray-900 dark:text-white">
-            {{ label }}
-          </p>
-        </div>
-      </label>
-    </UCard>
+        {{ label }}
+      </span>
+    </button>
   </div>
 </template>

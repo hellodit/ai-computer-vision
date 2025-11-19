@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
 import { useCamera, type CameraConfig } from '~/composables/useCamera'
-import { useGemini, type GeminiAnalysisResult } from '~/composables/useGemini'
+import { useGemini } from '~/composables/useGemini'
 import AnalysisGrid from '~/components/analysis/AnalysisGrid.vue'
+import type { AnalysisItemResult } from '~/types/analysis'
 
 interface Props {
   analysisItems?: string[]
@@ -13,8 +14,9 @@ const props = withDefaults(defineProps<Props>(), {
 })
 
 interface Emits {
-  (e: 'analysis-result', result: GeminiAnalysisResult): void
+  (e: 'analysis-result', result: AnalysisItemResult): void
   (e: 'analysis-error', error: string): void
+  (e: 'analysis-progress', type: string, isProcessing: boolean): void
 }
 
 const emit = defineEmits<Emits>()
@@ -185,7 +187,27 @@ Berikan hasil analisis yang terstruktur dan detail untuk setiap aspek yang dimin
 }
 
 /**
- * Handle image analysis dengan Gemini API
+ * Generate prompt untuk satu jenis analisa
+ */
+const generateSinglePrompt = (analysisType: string): string => {
+  // Mapping untuk setiap jenis analisa
+  const analysisPrompts: Record<string, string> = {
+    'General Analysis': 'Analisis keseluruhan gambar secara detail. Berikan deskripsi lengkap tentang apa yang terlihat dalam gambar, termasuk objek, orang, latar belakang, dan konteks visual lainnya. Jawab dalam bahasa Indonesia.',
+    'Emotion Detection': 'Analisis ekspresi wajah dan emosi orang-orang dalam gambar. Identifikasi emosi yang terlihat (senang, sedih, marah, netral, dll) dan tingkat kepercayaan deteksi. Jawab dalam bahasa Indonesia.',
+    'Fatigue Analysis': 'Analisis tanda-tanda kelelahan pada wajah. Perhatikan indikator seperti mata mengantuk, lingkaran hitam, ekspresi lelah, dan tanda fisik lainnya yang menunjukkan kelelahan. Jawab dalam bahasa Indonesia.',
+    'Gender Presentation': 'Analisis presentasi gender yang terlihat pada orang-orang dalam gambar. Deskripsikan karakteristik yang terlihat tanpa membuat asumsi definitif. Jawab dalam bahasa Indonesia.',
+    'Person Description': 'Beri deskripsi detail karakteristik fisik orang-orang dalam gambar, termasuk usia perkiraan, tinggi badan, bentuk wajah, dan fitur fisik lainnya yang terlihat. Jawab dalam bahasa Indonesia.',
+    'Accessories': 'Identifikasi dan deskripsikan aksesori atau item yang dikenakan oleh orang-orang dalam gambar, seperti kacamata, topi, perhiasan, jam tangan, tas, atau item lainnya. Jawab dalam bahasa Indonesia.',
+    'Gaze Analysis': 'Analisis arah pandangan mata dan fokus perhatian. Tentukan ke mana orang-orang dalam gambar sedang melihat atau fokus. Jawab dalam bahasa Indonesia.',
+    'Hair Analysis': 'Analisis karakteristik rambut orang-orang dalam gambar, termasuk warna rambut, panjang, gaya, tekstur, dan detail lainnya yang terlihat. Jawab dalam bahasa Indonesia.',
+    'Crowd Analysis': 'Analisis dinamika kelompok dan pola demografis. Hitung jumlah orang, distribusi usia dan gender, interaksi antar orang, dan pola perilaku kelompok. Jawab dalam bahasa Indonesia.'
+  }
+
+  return analysisPrompts[analysisType] || 'Analisis gambar ini secara detail. Jawab dalam bahasa Indonesia.'
+}
+
+/**
+ * Handle image analysis dengan Gemini API - melakukan request terpisah untuk setiap analisa
  */
 const handleAnalyzeImage = async (): Promise<void> => {
   if (!isStreamReady.value || isPaused.value) {
@@ -205,23 +227,47 @@ const handleAnalyzeImage = async (): Promise<void> => {
     return
   }
 
-  try {
-    // Generate prompt berdasarkan selected items
-    const prompt = generatePrompt(selectedAnalysisItems.value)
-    
-    const result = await analyzeImage(dataUrl, prompt)
-    if (result) {
+  // Lakukan request secara terpisah untuk setiap analisa
+  const analysisPromises = selectedAnalysisItems.value.map(async (analysisType: string) => {
+    // Emit progress untuk setiap analisa
+    emit('analysis-progress', analysisType, true)
+
+    try {
+      // Generate prompt untuk analisa ini saja
+      const prompt = generateSinglePrompt(analysisType)
+      
+      const result = await analyzeImage(dataUrl, prompt)
+      
+      if (result) {
+        emit('analysis-result', {
+          analysisType,
+          text: result,
+          timestamp: new Date()
+        })
+      } else if (geminiError.value) {
+        emit('analysis-result', {
+          analysisType,
+          text: '',
+          timestamp: new Date(),
+          error: geminiError.value
+        })
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : UI_MESSAGES.analysisFailed
       emit('analysis-result', {
-        text: result,
-        timestamp: new Date()
+        analysisType,
+        text: '',
+        timestamp: new Date(),
+        error: errorMessage
       })
-    } else if (geminiError.value) {
-      emit('analysis-error', geminiError.value)
+    } finally {
+      // Emit progress selesai untuk analisa ini
+      emit('analysis-progress', analysisType, false)
     }
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : UI_MESSAGES.analysisFailed
-    emit('analysis-error', errorMessage)
-  }
+  })
+
+  // Jalankan semua request secara paralel
+  await Promise.all(analysisPromises)
 }
 
 /**
