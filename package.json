@@ -10,6 +10,7 @@
     "postinstall": "nuxt prepare"
   },
   "dependencies": {
+    "@google/generative-ai": "^0.24.1",
     "@nuxt/ui": "^4.1.0",
     "nuxt": "^4.2.1",
     "typescript": "^5.9.3",

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
 import { useCamera, type CameraConfig } from '~/composables/useCamera'
+import { useGemini, type GeminiAnalysisResult } from '~/composables/useGemini'
 import AnalysisGrid from '~/components/analysis/AnalysisGrid.vue'
 
 interface Props {
@@ -10,6 +11,13 @@ interface Props {
 const props = withDefaults(defineProps<Props>(), {
   analysisItems: () => []
 })
+
+interface Emits {
+  (e: 'analysis-result', result: GeminiAnalysisResult): void
+  (e: 'analysis-error', error: string): void
+}
+
+const emit = defineEmits<Emits>()
 
 /**
  * Komponen CameraPreview
@@ -35,11 +43,17 @@ const UI_MESSAGES = {
   loading: 'Meminta izin kamera...',
   retryFailed: 'Video element tidak ditemukan setelah beberapa kali percobaan',
   screenshotSuccess: 'Screenshot berhasil diambil!',
-  screenshotFailed: 'Gagal mengambil screenshot'
+  screenshotFailed: 'Gagal mengambil screenshot',
+  analyzing: 'Menganalisis gambar...',
+  analysisSuccess: 'Analisis berhasil!',
+  analysisFailed: 'Gagal menganalisis gambar'
 } as const
 
 // State untuk screenshot
 const screenshotUrl = ref<string | null>(null)
+
+// State untuk selected analysis items
+const selectedAnalysisItems = ref<string[]>([])
 
 // ========== Composable ==========
 
@@ -61,6 +75,13 @@ const {
   captureScreenshot,
   getAvailableDevices
 } = useCamera(cameraConfig)
+
+// Gunakan composable untuk Gemini API
+const {
+  isAnalyzing,
+  error: geminiError,
+  analyzeImage
+} = useGemini()
 
 // ========== Functions ==========
 
@@ -111,6 +132,95 @@ const handleScreenshot = (): void => {
     link.click()
   } else {
     console.error(UI_MESSAGES.screenshotFailed)
+  }
+}
+
+/**
+ * Generate prompt berdasarkan selected analysis items
+ */
+const generatePrompt = (selectedItems: string[]): string => {
+  // Mapping untuk setiap jenis analisa
+  const analysisPrompts: Record<string, string> = {
+    'General Analysis': 'Analisis keseluruhan gambar secara detail. Berikan deskripsi lengkap tentang apa yang terlihat dalam gambar, termasuk objek, orang, latar belakang, dan konteks visual lainnya.',
+    'Emotion Detection': 'Analisis ekspresi wajah dan emosi orang-orang dalam gambar. Identifikasi emosi yang terlihat (senang, sedih, marah, netral, dll) dan tingkat kepercayaan deteksi.',
+    'Fatigue Analysis': 'Analisis tanda-tanda kelelahan pada wajah. Perhatikan indikator seperti mata mengantuk, lingkaran hitam, ekspresi lelah, dan tanda fisik lainnya yang menunjukkan kelelahan.',
+    'Gender Presentation': 'Analisis presentasi gender yang terlihat pada orang-orang dalam gambar. Deskripsikan karakteristik yang terlihat tanpa membuat asumsi definitif.',
+    'Person Description': 'Beri deskripsi detail karakteristik fisik orang-orang dalam gambar, termasuk usia perkiraan, tinggi badan, bentuk wajah, dan fitur fisik lainnya yang terlihat.',
+    'Accessories': 'Identifikasi dan deskripsikan aksesori atau item yang dikenakan oleh orang-orang dalam gambar, seperti kacamata, topi, perhiasan, jam tangan, tas, atau item lainnya.',
+    'Gaze Analysis': 'Analisis arah pandangan mata dan fokus perhatian. Tentukan ke mana orang-orang dalam gambar sedang melihat atau fokus.',
+    'Hair Analysis': 'Analisis karakteristik rambut orang-orang dalam gambar, termasuk warna rambut, panjang, gaya, tekstur, dan detail lainnya yang terlihat.',
+    'Crowd Analysis': 'Analisis dinamika kelompok dan pola demografis. Hitung jumlah orang, distribusi usia dan gender, interaksi antar orang, dan pola perilaku kelompok.'
+  }
+
+  // Jika tidak ada item yang dipilih, gunakan general analysis
+  if (!selectedItems || selectedItems.length === 0) {
+    return 'Analisis gambar ini secara detail. Berikan deskripsi lengkap tentang apa yang terlihat dalam gambar, termasuk objek, orang, emosi, dan konteks visual lainnya. Jawab dalam bahasa Indonesia.'
+  }
+
+  // Buat prompt berdasarkan item yang dipilih
+  const prompts: string[] = []
+  
+  selectedItems.forEach((item) => {
+    const prompt = analysisPrompts[item]
+    if (prompt) {
+      prompts.push(prompt)
+    }
+  })
+
+  // Jika tidak ada prompt yang cocok, gunakan default
+  if (prompts.length === 0) {
+    return 'Analisis gambar ini secara detail. Berikan deskripsi lengkap tentang apa yang terlihat dalam gambar. Jawab dalam bahasa Indonesia.'
+  }
+
+  // Gabungkan semua prompt
+  const combinedPrompt = `
+Analisis gambar ini dengan fokus pada aspek-aspek berikut:
+
+${prompts.map((p, index) => `${index + 1}. ${p}`).join('\n\n')}
+
+Berikan hasil analisis yang terstruktur dan detail untuk setiap aspek yang diminta. Jawab dalam bahasa Indonesia.
+`.trim()
+
+  return combinedPrompt
+}
+
+/**
+ * Handle image analysis dengan Gemini API
+ */
+const handleAnalyzeImage = async (): Promise<void> => {
+  if (!isStreamReady.value || isPaused.value) {
+    return
+  }
+
+  // Validasi: harus ada minimal 1 item yang dipilih
+  if (!selectedAnalysisItems.value || selectedAnalysisItems.value.length === 0) {
+    emit('analysis-error', 'Silakan pilih minimal satu jenis analisa yang ingin dilakukan.')
+    return
+  }
+
+  const dataUrl = captureScreenshot()
+  if (!dataUrl) {
+    const errorMsg = 'Gagal mengambil gambar untuk dianalisis'
+    emit('analysis-error', errorMsg)
+    return
+  }
+
+  try {
+    // Generate prompt berdasarkan selected items
+    const prompt = generatePrompt(selectedAnalysisItems.value)
+    
+    const result = await analyzeImage(dataUrl, prompt)
+    if (result) {
+      emit('analysis-result', {
+        text: result,
+        timestamp: new Date()
+      })
+    } else if (geminiError.value) {
+      emit('analysis-error', geminiError.value)
+    }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : UI_MESSAGES.analysisFailed
+    emit('analysis-error', errorMessage)
   }
 }
 
@@ -225,6 +335,41 @@ onBeforeUnmount(() => {
             </div>
           </Transition>
 
+          <!-- Analyzing Overlay -->
+          <Transition
+            name="fade"
+            enter-active-class="transition-opacity duration-300"
+            leave-active-class="transition-opacity duration-300"
+          >
+            <div
+              v-if="isAnalyzing"
+              class="absolute inset-0 flex items-center justify-center bg-black/60 text-white"
+            >
+              <div class="text-center">
+                <svg
+                  class="mx-auto mb-2 h-12 w-12 animate-spin"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                >
+                  <circle
+                    class="opacity-25"
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    stroke-width="4"
+                  />
+                  <path
+                    class="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                  />
+                </svg>
+                <p class="text-sm font-medium">{{ UI_MESSAGES.analyzing }}</p>
+              </div>
+            </div>
+          </Transition>
+
           <!-- Pause Overlay -->
           <Transition
             name="fade"
@@ -317,6 +462,26 @@ onBeforeUnmount(() => {
                 aria-label="Capture screenshot"
                 title="Capture screenshot"
               />
+
+              <UButton
+                v-if="isStreamReady && !isPaused"
+                icon="i-heroicons-sparkles"
+                :color="selectedAnalysisItems.length > 0 ? 'primary' : 'neutral'"
+                variant="solid"
+                size="lg"
+                :loading="isAnalyzing"
+                :disabled="isPaused || isAnalyzing || selectedAnalysisItems.length === 0"
+                @click="handleAnalyzeImage"
+                :aria-label="selectedAnalysisItems.length > 0 ? 'Analyze image with Gemini' : 'Pilih jenis analisa terlebih dahulu'"
+                :title="selectedAnalysisItems.length > 0 ? `Analyze dengan ${selectedAnalysisItems.length} jenis analisa` : 'Pilih minimal satu jenis analisa terlebih dahulu'"
+              >
+                <span v-if="!isAnalyzing">
+                  Analyze
+                  <span v-if="selectedAnalysisItems.length > 0" class="ml-1 text-xs opacity-75">
+                    ({{ selectedAnalysisItems.length }})
+                  </span>
+                </span>
+              </UButton>
             </div>
           </div>
         </div>
@@ -336,7 +501,10 @@ onBeforeUnmount(() => {
 
     <!-- Analysis Grid -->
     <div v-if="props.analysisItems.length > 0">
-      <AnalysisGrid :items="props.analysisItems" />
+      <AnalysisGrid
+        v-model="selectedAnalysisItems"
+        :items="props.analysisItems"
+      />
     </div>
   </div>
 </template>

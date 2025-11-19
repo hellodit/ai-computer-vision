@@ -1,6 +1,8 @@
 <script setup lang="ts">
+import { ref } from 'vue'
 import CameraPreview from '~/components/analysis/CameraPreview.vue'
 import type { AnalysisCategory } from '~/types/analysis'
+import type { GeminiAnalysisResult } from '~/composables/useGemini'
 
 const analysisCategories: AnalysisCategory[] = [
   {
@@ -51,6 +53,26 @@ const analysisCategories: AnalysisCategory[] = [
 ]
 
 const analyses = analysisCategories.map((category) => category.name)
+
+// State untuk hasil analisis
+const analysisResult = ref<GeminiAnalysisResult | null>(null)
+const analysisError = ref<string | null>(null)
+
+/**
+ * Handle analysis result dari CameraPreview
+ */
+const handleAnalysisResult = (result: GeminiAnalysisResult): void => {
+  analysisResult.value = result
+  analysisError.value = null
+}
+
+/**
+ * Handle analysis error dari CameraPreview
+ */
+const handleAnalysisError = (error: string): void => {
+  analysisError.value = error
+  analysisResult.value = null
+}
 </script>
 
 <template>
@@ -70,7 +92,11 @@ const analyses = analysisCategories.map((category) => category.name)
       <div class="grid gap-8 lg:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)]">
         <div class="col-span-1 grid grid-cols-1 gap-4"> 
           <ClientOnly>
-            <CameraPreview :analysis-items="analyses" />
+            <CameraPreview
+              :analysis-items="analyses"
+              @analysis-result="handleAnalysisResult"
+              @analysis-error="handleAnalysisError"
+            />
             <template #fallback>
               <div
                 class="flex min-h-[420px] items-center justify-center rounded-[28px] border border-dashed border-gray-300 bg-gray-100 text-gray-500 dark:border-gray-700 dark:bg-gray-800/40 dark:text-gray-400"
@@ -81,7 +107,11 @@ const analyses = analysisCategories.map((category) => category.name)
           </ClientOnly>
         </div>
 
-        <AnalysisResultPanel :categories="analysisCategories" />
+        <AnalysisResultPanel
+          :categories="analysisCategories"
+          :analysis-result="analysisResult"
+          :analysis-error="analysisError"
+        />
       </div>
     </div>
   </div>
