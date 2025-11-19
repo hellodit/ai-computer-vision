@@ -42,10 +42,11 @@ const FALLBACK_STATUS: AnalysisStatus = 'planned'
   <UCard class="rounded-2xl border border-gray-200 dark:border-gray-800">
     <div class="flex h-full flex-col gap-5">
       <div>
-        <p class="text-lg font-semibold text-gray-900 dark:text-white">Analysis roadmap</p>
+        <p class="text-lg font-semibold text-gray-900 dark:text-white">
+          Hasil Analisis
+        </p>
         <p class="text-sm text-gray-500 dark:text-gray-400">
-          Daftar kapabilitas analisis visual yang ingin didukung oleh sistem.
-          Tandai catatan atau temuan penting pada bagian bawah.
+          Daftar hasil analisis yang telah dilakukan.
         </p>
       </div>
 
@@ -149,12 +150,7 @@ const FALLBACK_STATUS: AnalysisStatus = 'planned'
         </div>
       </div>
 
-      <UTextarea
-        v-model="notes"
-        placeholder="Catatan hasil analisis..."
-        autoresize
-        :rows="4"
-      />
+   
     </div>
   </UCard>
 </template>

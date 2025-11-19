@@ -134,8 +134,8 @@ const handleAnalysisError = (error: string): void => {
       class="mx-auto flex w-full max-w-6xl flex-col gap-8 rounded-[32px] border border-gray-200 bg-white p-8 shadow-xl dark:border-gray-800 dark:bg-gray-900"
     >
 
-      <div class="grid grid-cols-4 gap-4">
-        <div class="col-span-2 col-span-1 grid grid-cols-1 gap-4"> 
+      <div class="grid grid-cols-12 gap-4">
+        <div class="col-span-8  grid grid-cols-1 gap-4"> 
           <ClientOnly>
             <CameraPreview
               :analysis-items="analyses"
@@ -153,7 +153,7 @@ const handleAnalysisError = (error: string): void => {
           </ClientOnly>
         </div>
 
-        <div class="col-span-2">
+        <div class="col-span-4">
           <AnalysisResultPanel
             :categories="analysisCategories"
             :analysis-results="analysisResults"

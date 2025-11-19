@@ -57,6 +57,16 @@ const screenshotUrl = ref<string | null>(null)
 // State untuk selected analysis items
 const selectedAnalysisItems = ref<string[]>([])
 
+const PERIODIC_INTERVAL_OPTIONS: Array<{ label: string; value: number }> = [
+  { label: 'Manual', value: 0 },
+  { label: '1 detik', value: 1000 },
+  { label: '5 detik', value: 5000 },
+  { label: '15 detik', value: 15000 }
+]
+
+const selectedPeriodicInterval = ref<number>(0)
+let periodicTimer: ReturnType<typeof setInterval> | null = null
+
 // ========== Composable ==========
 
 // Gunakan composable untuk mengelola kamera
@@ -271,6 +281,59 @@ const handleAnalyzeImage = async (): Promise<void> => {
 }
 
 /**
+ * Helpers untuk analisis periodik
+ */
+const clearPeriodicTimer = (): void => {
+  if (periodicTimer) {
+    clearInterval(periodicTimer)
+    periodicTimer = null
+  }
+}
+
+const runPeriodicAnalysis = async (): Promise<void> => {
+  if (
+    !isStreamReady.value ||
+    isPaused.value ||
+    selectedAnalysisItems.value.length === 0 ||
+    isAnalyzing.value
+  ) {
+    return
+  }
+
+  await handleAnalyzeImage()
+}
+
+const schedulePeriodicAnalysis = (): void => {
+  clearPeriodicTimer()
+
+  const interval = selectedPeriodicInterval.value
+
+  if (
+    interval <= 0 ||
+    !isStreamReady.value ||
+    isPaused.value ||
+    selectedAnalysisItems.value.length === 0
+  ) {
+    return
+  }
+
+  periodicTimer = setInterval(async () => {
+    if (
+      !isStreamReady.value ||
+      isPaused.value ||
+      selectedAnalysisItems.value.length === 0 ||
+      isAnalyzing.value
+    ) {
+      return
+    }
+
+    await handleAnalyzeImage()
+  }, interval)
+
+  void runPeriodicAnalysis()
+}
+
+/**
  * Toggle camera (start/stop)
  */
 const handleToggleCamera = async (): Promise<void> => {
@@ -310,6 +373,14 @@ watch(
   { immediate: true }
 )
 
+watch(
+  [selectedPeriodicInterval, isStreamReady, isPaused, () => selectedAnalysisItems.value.length],
+  () => {
+    schedulePeriodicAnalysis()
+  },
+  { immediate: true }
+)
+
 // ========== Lifecycle Hooks ==========
 
 onMounted(() => {
@@ -330,15 +401,51 @@ onBeforeUnmount(() => {
   if (screenshotUrl.value) {
     URL.revokeObjectURL(screenshotUrl.value)
   }
+  clearPeriodicTimer()
 })
 </script>
 
 <template>
   <div class="space-y-4">
     <UCard
-      class="min-h-[360px] rounded-2xl border border-dashed border-gray-300 bg-gray-50 dark:border-gray-700 dark:bg-gray-800/40"
+      class="min-h-[360px] rounded-2xl dark:bg-gray-800/40"
     >
+        <!-- Periodic Analysis Controls -->
+        <div
+      class="rounded-2xl mb-4 border border-gray-200 bg-white/70 p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900/60"
+    >
+      <div class="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <p class="text-sm font-semibold text-gray-900 dark:text-gray-100">Analisis Periodik</p>
+          <p class="text-xs text-gray-500 dark:text-gray-400">
+            Pilih interval untuk menjalankan analisis secara otomatis.
+          </p>
+          <p
+            v-if="selectedPeriodicInterval > 0"
+            class="text-xs font-medium text-emerald-600 dark:text-emerald-400"
+          >
+            Aktif setiap {{ selectedPeriodicInterval / 1000 }} detik
+          </p>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <UButton
+            v-for="option in PERIODIC_INTERVAL_OPTIONS"
+            :key="option.value"
+            size="sm"
+            :variant="selectedPeriodicInterval === option.value ? 'solid' : 'soft'"
+            :color="selectedPeriodicInterval === option.value ? 'primary' : 'neutral'"
+            :disabled="option.value > 0 && (selectedAnalysisItems.length === 0 || !isStreamReady || isPaused)"
+            @click="selectedPeriodicInterval = option.value"
+          >
+            {{ option.label }}
+          </UButton>
+        </div>
+      </div>
+    </div>
+
+
       <div class="flex h-full items-center justify-center">
+        
         <!-- Error State -->
         <div
           v-if="cameraError"
@@ -364,57 +471,6 @@ onBeforeUnmount(() => {
             :class="{ 'opacity-0': !isStreamReady }"
             aria-label="Camera preview"
           />
-
-          <!-- Loading Overlay -->
-          <Transition
-            name="fade"
-            enter-active-class="transition-opacity duration-300"
-            leave-active-class="transition-opacity duration-300"
-          >
-            <div
-              v-if="!isStreamReady"
-              class="absolute inset-0 flex items-center justify-center bg-black/50 text-sm text-white"
-              role="status"
-              aria-live="polite"
-            >
-              {{ UI_MESSAGES.loading }}
-            </div>
-          </Transition>
-
-          <!-- Analyzing Overlay -->
-          <Transition
-            name="fade"
-            enter-active-class="transition-opacity duration-300"
-            leave-active-class="transition-opacity duration-300"
-          >
-            <div
-              v-if="isAnalyzing"
-              class="absolute inset-0 flex items-center justify-center bg-black/60 text-white"
-            >
-              <div class="text-center">
-                <svg
-                  class="mx-auto mb-2 h-12 w-12 animate-spin"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                >
-                  <circle
-                    class="opacity-25"
-                    cx="12"
-                    cy="12"
-                    r="10"
-                    stroke="currentColor"
-                    stroke-width="4"
-                  />
-                  <path
-                    class="opacity-75"
-                    fill="currentColor"
-                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                  />
-                </svg>
-                <p class="text-sm font-medium">{{ UI_MESSAGES.analyzing }}</p>
-              </div>
-            </div>
-          </Transition>
 
           <!-- Pause Overlay -->
           <Transition
@@ -533,6 +589,7 @@ onBeforeUnmount(() => {
         </div>
       </div>
     </UCard>
+
 
     <!-- Camera Info -->
     <div
